@@ -138,7 +138,12 @@ class Ensemble:
 
         # 'classification' , 'regression'
         self.type_ = ''
-        self.learner_ = ['rf', 'xgb', 'lgbm'] if learner == 'auto' else [learner]
+
+        if type(learner) is list:
+            self.learner_ = learner
+        else:
+            self.learner_ = ['rf', 'xgb', 'lgbm'] if learner == 'auto' else [learner]
+        
         self.ensemble_ = ensemble if ensemble in ['voting', 'stacking'] else 'voting'
         self.metric_ = metric
 
@@ -153,15 +158,17 @@ class Ensemble:
         return weights
         
     def fit(self, X_train: pd.DataFrame, y_train: np.ndarray,
-            n_trials: int=20, cv: int=5, N: int=5) -> None:
+            n_trials: int=20, cv: int=5, N: int=5, optimize: bool=True) -> None:
 
         self.X_cols = X_train.columns
 
         for learner in self.learner_:
-            # RF, XGB, LGBM 순서대로 hyper-parameter tuning
-            param = self.optimizer(X_train, y_train, learner, n_trials, cv)
-            # Hyper-parameter fix + tuning
-            self.param[learner].update(param)
+            if optimize:
+                # RF, XGB, LGBM 순서대로 hyper-parameter tuning
+                param = self.optimizer(X_train, y_train, learner, n_trials, cv)
+                # Hyper-parameter fix + tuning
+                self.param[learner].update(param)
+            
             # Set up final models
             self.models[learner] = self.learners[self.type_][learner](**self.param[learner])
             self.models[learner].fit(X_train, y_train)
@@ -180,36 +187,28 @@ class Ensemble:
             }
 
             if self.ensemble_ == 'voting':
-                ensemble_param.update({'voting': 'soft'})
+                if self.type_ == 'classification':
+                    ensemble_param.update({'voting': 'soft'})
+
+            elif self.ensemble_ == 'stacking':
+                ensemble_param.update({'cv': cv})
             
             self.final_ensemble = self.voters[self.type_][self.ensemble_](**ensemble_param)
 
-            grid_params = {'weights': weights}
-            grid_Search = GridSearchCV(param_grid = grid_params, estimator=self.final_ensemble, scoring=self.metric_dict[self.type_][self.metric_])
-            grid_Search.fit(X_train, y_train)
-            self.final_ensemble = grid_Search.best_estimator_
+            if optimize:
+                grid_params = {'weights': weights}
+                grid_Search = GridSearchCV(param_grid=grid_params, estimator=self.final_ensemble, scoring=self.metric_dict[self.type_][self.metric_])
+                grid_Search.fit(X_train, y_train)
+                self.final_ensemble = grid_Search.best_estimator_
 
     def predict(self, X_test: pd.DataFrame) -> np.ndarray:
         return self.final_ensemble.predict(X_test)
 
-    def score(self, y_true: np.ndarray, y_pred: np.ndarray, cv: int=1) -> float:
-        if cv <= 1:
-            if self.metric_ in ['rmse', 'rmsle']:
-                return self.metric_dict[self.type_][self.metric_[1:]](y_true, y_pred, squared=False)
-            else:
-                return self.metric_dict[self.type_][self.metric_](y_true, y_pred)
-
+    def score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        if self.metric_ in ['rmse', 'rmsle']:
+            return self.metric_dict[self.type_][self.metric_[1:]](y_true, y_pred, squared=False)
         else:
-            folds = KFold(n_splits=cv, shuffle=True, random_state=42)
-            scores = []
-
-            for val_idx, _ in folds.split(y_true, y_pred):
-                y_true_ = y_true[val_idx]
-                y_pred_ = y_pred[val_idx]
-                score = self.score(y_true_, y_pred_)
-                scores.append(score)
-
-            return np.mean(scores)
+            return self.metric_dict[self.type_][self.metric_](y_true, y_pred)
 
     def K_fold(self, model, X, y, cv) -> list:
         scores = []
