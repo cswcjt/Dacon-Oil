@@ -179,8 +179,10 @@ class Ensemble:
                 'n_jobs': -1
             }
 
-            if self.ensemble_ == 'voting':
+            if self.ensemble_ == 'voting' and self.type_ == 'classification':
                 ensemble_param.update({'voting': 'soft'})
+            elif self.ensemble_ == 'stacking':
+                ensemble_param.update({'cv': cv})
             
             self.final_ensemble = self.voters[self.type_][self.ensemble_](**ensemble_param)
 
