@@ -64,7 +64,7 @@ X_test = X_test[test.columns]
 # ("under", "RandomUnderSampler")
 # ("over", "RandomOverSampler")
 # ("hybrid", "SMOTEENN")
-# sampler 
+# sampler
 variable_dict = {
     "test_size": 0.1, 
     "learner": 'xgb',
@@ -99,11 +99,11 @@ resid_cols = X2.drop(columns=test.columns).columns
 X_reg = X[test.columns]
 
 
-f = open("C:/doit/새파일.txt", 'w')
-for i in range(1, 11):
-    data = "%d번째 줄입니다.\n" % i
-    f.write(data)
-f.close()
+# f = open("C:/doit/새파일.txt", 'w')
+# for i in range(1, 11):
+#     data = "%d번째 줄입니다.\n" % i
+#     f.write(data)
+# f.close()
 
 reg_dict = {}
 """
@@ -117,16 +117,22 @@ regressor hyper parameters
     "early_stopping_rounds": , # overfitting 방지용(default=10)
     "optimize": , # optuna 사용할지 말지 True or False 사용 ㄱㄱ(default=False)
 }
+reg.fit parameters
+{
+    "n_trials": , # optuna 횟수(default=20)
+    "cv": , # K-fold CV의 K(default=5)
+    "N": , # voting에서 모델별 weights의 조합가지수(default=5)
+}
 """
 for col in resid_cols:
-    reg = Regressor(learner=['xgb', 'rf'], ensemble='voting', optimize=False)
+    reg = Regressor(optimize=True)
     y_reg = X[col]
     y_reg_test = X_test_reg_valid[col]
     # train-validation split
     X_reg_train, X_reg_val, y_reg_train, y_reg_val = train_test_split(X_reg, y_reg, test_size=0.2, random_state=69)
 
     # model fitting
-    reg.fit(X_reg_train, y_reg_train, n_trials=30, cv=5) # n_trials: optuna 조지는 정도 / cv: K-fold의 K값
+    reg.fit(X_reg_train, y_reg_train, n_trials=10, cv=5, N=3) # n_trials: optuna 조지는 정도 / cv: K-fold의 K값
 
     # prediction
     y_reg_train_pred = reg.predict(X_reg_train)
@@ -178,6 +184,12 @@ classifier hyper parameters
     "early_stopping_rounds": , # overfitting 방지용(default=10)
     "optimize": , # optuna 사용할지 말지 True or False 사용 ㄱㄱ(default=False)
 }
+clf.fit parameters
+{
+    "n_trials": , # optuna 횟수(default=20)
+    "cv": , # K-fold CV의 K(default=5)
+    "N": , # voting에서 모델별 weights의 조합가지수(default=5)
+}
 """
 for criteria, (X_train, X_val, y_train, y_val) in split_X_y_bundle.items():
     test_temp = test[test.COMPONENT_ARBITRARY == criteria]
@@ -187,10 +199,10 @@ for criteria, (X_train, X_val, y_train, y_val) in split_X_y_bundle.items():
     X_test_temp = X_test_temp.drop(columns=['COMPONENT_ARBITRARY'])
     
     # model initializing
-    clf = BinaryCalssifier(optimize=True)
+    clf = BinaryCalssifier(learner='auto', optimize=True)
 
     # model training
-    clf.fit(X_train, y_train, n_trials=50, cv=5) # n_trials: optuna 조지는 정도 / cv: K-fold의 K값
+    clf.fit(X_train, y_train, n_trials=20, cv=5) # n_trials: optuna 조지는 정도 / cv: K-fold의 K값
 
     # prediction
     y_train_pred = clf.predict(X_train)
@@ -217,15 +229,16 @@ y_pred = dummy_test_final.Y_LABEL.values
 """
 Only be able to operate in jupyter notebook enviornment
 """
-# conf_matrix = confusion_matrix(y_test, dummy_test_final.Y_LABEL.values)
+conf_matrix = confusion_matrix(y_test, dummy_test_final.Y_LABEL.values)
 # cm_display = ConfusionMatrixDisplay(confusion_matrix = conf_matrix,
 #                                     display_labels = ['불량', '정상'])
 # cm_display.plot()
 # plt.show()
 
+
 print('*' * 40)
 print('Final model precision:\t%.4f' % (precision_score(y_test, y_pred)))
-print('Final model precision:\t%.4f' % (recall_score(y_test, y_pred)))
+print('Final model recall:\t%.4f' % (recall_score(y_test, y_pred)))
 print('Final model f1_score:\t%.4f' % (f1_score(y_test, y_pred)))
 print('*' * 40)
 
