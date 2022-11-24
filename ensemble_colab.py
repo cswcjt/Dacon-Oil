@@ -15,7 +15,6 @@ optuna             2.10.1
 # ---------------------------------------------------------------------------- #
 import pandas as pd
 import numpy as np
-from typing import Optional, Union
 import copy
 import warnings
 warnings.filterwarnings(action='ignore')
@@ -52,15 +51,12 @@ class Ensemble:
     """
     def __init__(self, metric: str,
                  objecitve: str,
-                 learner: Union[str, list[str]]='auto',
-                 ensemble: Optional[str]='voting',
-                 learning_rate: Optional[float]=0.005,
-                 random_state: Optional[int]=42,
-                 early_stopping_rounds: Optional[int]=10,
+                 learner='auto',
+                 ensemble='voting',
+                 learning_rate=0.005,
+                 random_state=42,
+                 early_stopping_rounds=10,
                  optimize: bool=False,
-                 n_trials: int=20,
-                 cv: int=5,
-                 N: int=5,
                  **kwargs: any):
         """
         metric : sklearn.metrics 내장함수 활용
@@ -82,9 +78,6 @@ class Ensemble:
         self.random_state = random_state
         self.early_stopping_rounds = early_stopping_rounds
         self.optimize_ = optimize
-        self.n_trials_ = n_trials
-        self.cv_ = cv
-        self.N_ = N
 
         if kwargs:
             for key, value in kwargs.items:
@@ -209,9 +202,9 @@ class Ensemble:
     def model_fit(self, model: callable,
                   learner: str,
                   X_train: pd.DataFrame, 
-                  y_train: Union[pd.Series, pd.DataFrame, np.ndarray],
-                  X_val: Optional[pd.DataFrame],
-                  y_val: Optional[Union[pd.Series, pd.DataFrame, np.ndarray]]) -> None:
+                  y_train: np.ndarray,
+                  X_val: pd.DataFrame,
+                  y_val: np.ndarray) -> None:
             
             if learner == 'rf':
                 getattr(model, 'fit')(X_train, y_train)
@@ -221,14 +214,16 @@ class Ensemble:
                                       eval_set=[(X_train, y_train), (X_val, y_val)],
                                       early_stopping_rounds=self.early_stopping_rounds)
 
-    def fit(self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray]) -> None:
+    def fit(self, X: pd.DataFrame, y: np.ndarray,
+            n_trials: int=20, cv: int=5,
+            N: int=5) -> None:
 
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=self.random_state)
 
         for learner in self.learner_:
             if self.optimize_:
                 # RF, XGB, LGBM 순서대로 hyper-parameter tuning
-                param = self.optimizer(X_train, y_train, learner, self.n_trials_, self.cv_)
+                param = self.optimizer(X_train, y_train, learner, n_trials, cv)
                 # Hyper-parameter fix + tuning
                 self.param[learner].update(param)
             
@@ -255,13 +250,13 @@ class Ensemble:
                     ensemble_param.update({'voting': 'soft'})
 
             elif self.ensemble_ == 'stacking':
-                ensemble_param.update({'cv': self.cv_})
+                ensemble_param.update({'cv': cv})
             
             self.final_ensemble = self.voters[self.type_][self.ensemble_](**ensemble_param)
 
             if self.optimize_ and (self.ensemble_ == 'voting'):
                 # 'weights': weights
-                weights = self.make_weights(n_learners=len(self.learner_), N=self.N_)
+                weights = self.make_weights(n_learners=len(self.learner_), N=N)
                 grid_params = {'weights': weights}
                 grid_Search = GridSearchCV(param_grid=grid_params, estimator=self.final_ensemble, scoring=self.metric_dict[self.type_][self.metric_])
                 grid_Search.fit(X_train, y_train)
@@ -281,7 +276,7 @@ class Ensemble:
     def K_fold(self, model: callable,
                learner: str,
                X: pd.DataFrame,
-               y: Union[pd.Series, np.ndarray],
+               y: np.ndarray,
                cv: int) -> list:
         scores = []
         folds = StratifiedKFold(n_splits=cv, shuffle=True, random_state=self.random_state)
@@ -317,7 +312,7 @@ class Ensemble:
         return scores
 
     def objective(self, trial: Trial,
-                  X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
+                  X: pd.DataFrame, y: np.ndarray,
                   learner: str, cv: int) -> float:
         temp = copy.deepcopy(self.param[learner])
         
@@ -372,7 +367,7 @@ class Ensemble:
         return np.mean(scores)
     
     def optimizer(self, X: pd.DataFrame,
-                  y: Union[pd.Series, np.ndarray], learner: str,
+                  y: np.ndarray, learner: str,
                   n_trials: int, cv: int) -> dict:
         
         direction = self.metric_direction_dict[self.type_][self.metric_]
@@ -389,11 +384,11 @@ class BinaryCalssifier(Ensemble):
     """
     def __init__(self, metric: str='f1_score',
                  objecitve: str='classification',
-                 learner: Union[str, list[str]]='auto',
-                 ensemble: Optional[str]='voting',
-                 learning_rate: Optional[float]=0.005,
-                 random_state: Optional[int]=42,
-                 early_stopping_rounds: Optional[int]=10,
+                 learner='auto',
+                 ensemble='voting',
+                 learning_rate=0.005,
+                 random_state=42,
+                 early_stopping_rounds=10,
                  optimize: bool=False,
                  **kwargs: any):
 
@@ -410,11 +405,11 @@ class Regressor(Ensemble):
     """
     def __init__(self, metric: str='r2_score',
                  objecitve: str='regression',
-                 learner: Union[str, list[str]]='auto',
-                 ensemble: Optional[str]='voting',
-                 learning_rate: Optional[float]=0.005,
-                 random_state: Optional[int]=42,
-                 early_stopping_rounds: Optional[int]=10,
+                 learner='auto',
+                 ensemble='voting',
+                 learning_rate=0.005,
+                 random_state=42,
+                 early_stopping_rounds=10,
                  optimize: bool=False,
                  **kwargs: any):
 
