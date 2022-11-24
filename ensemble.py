@@ -395,13 +395,17 @@ class BinaryCalssifier(Ensemble):
                  random_state: Optional[int]=42,
                  early_stopping_rounds: Optional[int]=10,
                  optimize: bool=False,
+                 n_trials: int=20,
+                 cv: int=5,
+                 N: int=5,
                  **kwargs: any):
 
         super().__init__(metric, objecitve,
                          learner, ensemble,
                          learning_rate, random_state,
                          early_stopping_rounds,
-                         optimize, **kwargs)
+                         optimize, n_trials,
+                         cv, N, **kwargs)
 
 class Regressor(Ensemble):
     # Child Class
@@ -416,10 +420,14 @@ class Regressor(Ensemble):
                  random_state: Optional[int]=42,
                  early_stopping_rounds: Optional[int]=10,
                  optimize: bool=False,
+                 n_trials: int=20,
+                 cv: int=5,
+                 N: int=5,
                  **kwargs: any):
 
         super().__init__(metric, objecitve,
                          learner, ensemble,
                          learning_rate, random_state,
                          early_stopping_rounds,
-                         optimize, **kwargs)
+                         optimize, n_trials,
+                         cv, N, **kwargs)

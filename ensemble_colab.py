@@ -52,11 +52,14 @@ class Ensemble:
     def __init__(self, metric: str,
                  objecitve: str,
                  learner='auto',
-                 ensemble='voting',
-                 learning_rate=0.005,
-                 random_state=42,
-                 early_stopping_rounds=10,
+                 ensemble: str='voting',
+                 learning_rate: float=0.005,
+                 random_state: int=42,
+                 early_stopping_rounds: int=10,
                  optimize: bool=False,
+                 n_trials: int=20,
+                 cv: int=5,
+                 N: int=5,
                  **kwargs: any):
         """
         metric : sklearn.metrics 내장함수 활용
@@ -78,6 +81,9 @@ class Ensemble:
         self.random_state = random_state
         self.early_stopping_rounds = early_stopping_rounds
         self.optimize_ = optimize
+        self.n_trials_ = n_trials
+        self.cv_ = cv
+        self.N_ = N
 
         if kwargs:
             for key, value in kwargs.items:
@@ -214,16 +220,14 @@ class Ensemble:
                                       eval_set=[(X_train, y_train), (X_val, y_val)],
                                       early_stopping_rounds=self.early_stopping_rounds)
 
-    def fit(self, X: pd.DataFrame, y: np.ndarray,
-            n_trials: int=20, cv: int=5,
-            N: int=5) -> None:
+    def fit(self, X: pd.DataFrame, y: np.ndarray) -> None:
 
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=self.random_state)
 
         for learner in self.learner_:
             if self.optimize_:
                 # RF, XGB, LGBM 순서대로 hyper-parameter tuning
-                param = self.optimizer(X_train, y_train, learner, n_trials, cv)
+                param = self.optimizer(X_train, y_train, learner, self.n_trials_, self.cv_)
                 # Hyper-parameter fix + tuning
                 self.param[learner].update(param)
             
@@ -250,13 +254,13 @@ class Ensemble:
                     ensemble_param.update({'voting': 'soft'})
 
             elif self.ensemble_ == 'stacking':
-                ensemble_param.update({'cv': cv})
+                ensemble_param.update({'cv': self.cv_})
             
             self.final_ensemble = self.voters[self.type_][self.ensemble_](**ensemble_param)
 
             if self.optimize_ and (self.ensemble_ == 'voting'):
                 # 'weights': weights
-                weights = self.make_weights(n_learners=len(self.learner_), N=N)
+                weights = self.make_weights(n_learners=len(self.learner_), N=self.N_)
                 grid_params = {'weights': weights}
                 grid_Search = GridSearchCV(param_grid=grid_params, estimator=self.final_ensemble, scoring=self.metric_dict[self.type_][self.metric_])
                 grid_Search.fit(X_train, y_train)
@@ -390,13 +394,17 @@ class BinaryCalssifier(Ensemble):
                  random_state=42,
                  early_stopping_rounds=10,
                  optimize: bool=False,
+                 n_trials: int=20,
+                 cv: int=5,
+                 N: int=5,
                  **kwargs: any):
 
         super().__init__(metric, objecitve,
                          learner, ensemble,
                          learning_rate, random_state,
                          early_stopping_rounds,
-                         optimize, **kwargs)
+                         optimize, n_trials,
+                         cv, N, **kwargs)
 
 class Regressor(Ensemble):
     # Child Class
@@ -411,10 +419,14 @@ class Regressor(Ensemble):
                  random_state=42,
                  early_stopping_rounds=10,
                  optimize: bool=False,
+                 n_trials: int=20,
+                 cv: int=5,
+                 N: int=5,
                  **kwargs: any):
 
         super().__init__(metric, objecitve,
                          learner, ensemble,
                          learning_rate, random_state,
                          early_stopping_rounds,
-                         optimize, **kwargs)
+                         optimize, n_trials,
+                         cv, N, **kwargs)
