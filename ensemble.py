@@ -212,7 +212,6 @@ class Ensemble:
             else:
                 getattr(model, 'fit')(X_train,
                                       y_train,
-                                      eval_metric=self.metric_dict[self.type_][self.metric_],
                                       eval_set=[(X_train, y_train), (X_val, y_val)],
                                       early_stopping_rounds=self.early_stopping_rounds)
 
