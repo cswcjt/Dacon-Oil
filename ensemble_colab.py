@@ -15,7 +15,6 @@ optuna             2.10.1
 # ---------------------------------------------------------------------------- #
 import pandas as pd
 import numpy as np
-from typing import Optional, Union
 import copy
 import warnings
 warnings.filterwarnings(action='ignore')
@@ -52,11 +51,11 @@ class Ensemble:
     """
     def __init__(self, metric: str,
                  objecitve: str,
-                 learner: Union[str, list[str]]='auto',
-                 ensemble: Optional[str]='voting',
-                 learning_rate: Optional[float]=0.005,
-                 random_state: Optional[int]=42,
-                 early_stopping_rounds: Optional[int]=10,
+                 learner='auto',
+                 ensemble: str='voting',
+                 learning_rate: float=0.005,
+                 random_state: int=42,
+                 early_stopping_rounds: int=10,
                  optimize: bool=False,
                  n_trials: int=20,
                  cv: int=5,
@@ -209,9 +208,9 @@ class Ensemble:
     def model_fit(self, model: callable,
                   learner: str,
                   X_train: pd.DataFrame, 
-                  y_train: Union[pd.Series, pd.DataFrame, np.ndarray],
-                  X_val: Optional[pd.DataFrame],
-                  y_val: Optional[Union[pd.Series, pd.DataFrame, np.ndarray]]) -> None:
+                  y_train: np.ndarray,
+                  X_val: pd.DataFrame,
+                  y_val: np.ndarray) -> None:
             
             if learner == 'rf':
                 getattr(model, 'fit')(X_train, y_train)
@@ -221,7 +220,7 @@ class Ensemble:
                                       eval_set=[(X_train, y_train), (X_val, y_val)],
                                       early_stopping_rounds=self.early_stopping_rounds)
 
-    def fit(self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray]) -> None:
+    def fit(self, X: pd.DataFrame, y: np.ndarray) -> None:
 
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=self.random_state)
 
@@ -281,7 +280,7 @@ class Ensemble:
     def K_fold(self, model: callable,
                learner: str,
                X: pd.DataFrame,
-               y: Union[pd.Series, np.ndarray],
+               y: np.ndarray,
                cv: int) -> list:
         scores = []
         folds = StratifiedKFold(n_splits=cv, shuffle=True, random_state=self.random_state)
@@ -317,7 +316,7 @@ class Ensemble:
         return scores
 
     def objective(self, trial: Trial,
-                  X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
+                  X: pd.DataFrame, y: np.ndarray,
                   learner: str, cv: int) -> float:
         temp = copy.deepcopy(self.param[learner])
         
@@ -372,7 +371,7 @@ class Ensemble:
         return np.mean(scores)
     
     def optimizer(self, X: pd.DataFrame,
-                  y: Union[pd.Series, np.ndarray], learner: str,
+                  y: np.ndarray, learner: str,
                   n_trials: int, cv: int) -> dict:
         
         direction = self.metric_direction_dict[self.type_][self.metric_]
@@ -389,11 +388,11 @@ class BinaryCalssifier(Ensemble):
     """
     def __init__(self, metric: str='f1_score',
                  objecitve: str='classification',
-                 learner: Union[str, list[str]]='auto',
-                 ensemble: Optional[str]='voting',
-                 learning_rate: Optional[float]=0.005,
-                 random_state: Optional[int]=42,
-                 early_stopping_rounds: Optional[int]=10,
+                 learner='auto',
+                 ensemble='voting',
+                 learning_rate=0.005,
+                 random_state=42,
+                 early_stopping_rounds=10,
                  optimize: bool=False,
                  n_trials: int=20,
                  cv: int=5,
@@ -414,11 +413,11 @@ class Regressor(Ensemble):
     """
     def __init__(self, metric: str='r2_score',
                  objecitve: str='regression',
-                 learner: Union[str, list[str]]='auto',
-                 ensemble: Optional[str]='voting',
-                 learning_rate: Optional[float]=0.005,
-                 random_state: Optional[int]=42,
-                 early_stopping_rounds: Optional[int]=10,
+                 learner='auto',
+                 ensemble='voting',
+                 learning_rate=0.005,
+                 random_state=42,
+                 early_stopping_rounds=10,
                  optimize: bool=False,
                  n_trials: int=20,
                  cv: int=5,
