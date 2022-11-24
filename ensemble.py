@@ -1,10 +1,21 @@
 # ---------------------------------------------------------------------------- #
 #                 Make Model Pipeline for the multiple tests                   #
 # ---------------------------------------------------------------------------- #
+"""
+<Module Version>
+numpy              1.23.4
+pandas             1.5.1
+scikit-learn       1.1.3
+xgboost            1.7.1
+lightgbm           3.3.3
+optuna             2.10.1
+"""
+# 
+#
+# ---------------------------------------------------------------------------- #
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+from typing import Optional, Union
 import copy
 import warnings
 warnings.filterwarnings(action='ignore')
@@ -39,12 +50,47 @@ class Ensemble:
     Ensemble & Optimize 3 models(RandomForest, XGBoost, LightGBM)
     - (model_type : Classifier / Regressor) Ensemble with (ensemble : voting / stacking)
     """
-    def __init__(self, metric: str, learner: str='auto', ensemble: str='voting'):
+    def __init__(self, metric: str,
+                 objecitve: str,
+                 learner: Union[str, list[str]]='auto',
+                 ensemble: Optional[str]='voting',
+                 learning_rate: Optional[float]=0.005,
+                 random_state: Optional[int]=42,
+                 early_stopping_rounds: Optional[int]=10,
+                 optimize: bool=False,
+                 **kwargs: any):
         """
         metric : sklearn.metrics 내장함수 활용
         learner : 'auto' - rf, xgb, lgbm ensemble / 'rf' - RandomForest / 'xgb' - XGBoost / 'lgbm' - LightGBM
         ensemble : 'voting', 'stacking'
         """
+
+        # 'classification' , 'regression'
+        self.type_ = objecitve
+
+        if type(learner) is list:
+            self.learner_ = learner
+        else:
+            self.learner_ = ['rf', 'xgb', 'lgbm'] if learner == 'auto' else [learner]
+        
+        self.ensemble_ = ensemble if ensemble in ['voting', 'stacking'] else 'voting'
+        self.metric_ = metric
+        self.learning_rate = learning_rate
+        self.random_state = random_state
+        self.early_stopping_rounds = early_stopping_rounds
+        self.optimize_ = optimize
+
+        if kwargs:
+            for key, value in kwargs.items:
+                if hasattr(self, key):
+                    getattr(self, key, value)
+                    if key == 'learner':
+                        if type(learner) is list:
+                            self.learner_ = learner
+                        else:
+                            self.learner_ = ['rf', 'xgb', 'lgbm'] if learner == 'auto' else [learner]
+
+        
         self.final_ensemble = None        # Final Ensemble model
         self.models = {
             'rf': None,
@@ -94,18 +140,18 @@ class Ensemble:
         # self.param[self.learner_]
         self.param = {
             'rf' : {'n_jobs': -1,
-                    'random_state': 42},
+                    'random_state': self.random_state},
             
-            'xgb' : {'learning_rate': 0.001,
+            'xgb' : {'learning_rate': self.learning_rate,
                      'nthread' : -1,
                      'n_jobs': -1,
                      'tree_method': 'gpu_hist',
                      'predictor': 'gpu_predictor',
-                     'random_state': 42},
+                     'random_state': self.random_state},
             
-            'lgbm' : {'learning_rate': 0.001,
+            'lgbm' : {'learning_rate': self.learning_rate,
                       'n_jobs': -1,
-                      'random_state': 42}
+                      'random_state': self.random_state}
         }
 
         # self.learners[self.type_][self.learner_]
@@ -136,51 +182,66 @@ class Ensemble:
             }
         }
 
-        # 'classification' , 'regression'
-        self.type_ = ''
-
-        if type(learner) is list:
-            self.learner_ = learner
-        else:
-            self.learner_ = ['rf', 'xgb', 'lgbm'] if learner == 'auto' else [learner]
-        
-        self.ensemble_ = ensemble if ensemble in ['voting', 'stacking'] else 'voting'
-        self.metric_ = metric
-
-    def make_weights(self, N: int) -> list:
+    def make_weights(self, n_learners: int, N: int) -> list:
         # x+y+z = 5인 음이 아닌 정수 (x, y, z) 순서쌍 만들기
         weights = []
-        for i in range(N+1):
-            for j in range(N+1-i):
-                k = N-i-j
-                temp = [i/N, j/N, k/N]
-                weights.append(temp)
-        return weights
-        
-    def fit(self, X_train: pd.DataFrame, y_train: np.ndarray,
-            n_trials: int=20, cv: int=5, N: int=5, optimize: bool=True) -> None:
 
-        self.X_cols = X_train.columns
+        if n_learners == 3:
+            for i in range(N+1):
+                for j in range(N+1-i):
+                    k = N-i-j
+                    temp = [i/N, j/N, k/N]
+                    weights.append(temp)
+        elif n_learners == 2:
+            for i in range(N+1):
+                j = N-i
+                temp = [i/N, j/N]
+                weights.append(temp)
+
+        return weights
+
+    def model_fit(self, model: callable,
+                  learner: str,
+                  X_train: pd.DataFrame, 
+                  y_train: Union[pd.Series, pd.DataFrame, np.ndarray],
+                  X_val: Optional[pd.DataFrame],
+                  y_val: Optional[Union[pd.Series, pd.DataFrame, np.ndarray]]) -> None:
+            
+            if learner == 'rf':
+                getattr(model, 'fit')(X_train, y_train)
+            else:
+                getattr(model, 'fit')(X_train,
+                                      y_train,
+                                      eval_metric=self.metric_dict[self.type_][self.metric_],
+                                      eval_set=[(X_train, y_train), (X_val, y_val)],
+                                      early_stopping_rounds=self.early_stopping_rounds)
+
+    def fit(self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
+            n_trials: Optional[int]=20, cv: Optional[int]=5,
+            N: Optional[int]=5) -> None:
+
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=self.random_state)
 
         for learner in self.learner_:
-            if optimize:
+            if self.optimize_:
                 # RF, XGB, LGBM 순서대로 hyper-parameter tuning
                 param = self.optimizer(X_train, y_train, learner, n_trials, cv)
                 # Hyper-parameter fix + tuning
                 self.param[learner].update(param)
             
-            # Set up final models
+            # Initialize final models
             self.models[learner] = self.learners[self.type_][learner](**self.param[learner])
-            self.models[learner].fit(X_train, y_train)
 
+        # If only 1 model is used, final model is just fitted model
         if len(self.learner_) < 2:
             self.final_ensemble = self.models[self.learner_[0]]
-
+            self.model_fit(self.final_ensemble, self.learner_[0],
+                           X_train, y_train,
+                           X_val, y_val)
+        # Else if, fit ensemble model
         else:
             estimators = [(learner, self.models[learner]) for learner in self.learner_]
-            weights = self.make_weights(N)
 
-            # 'weights': weights,
             ensemble_param = {
                 'estimators': estimators,
                 'n_jobs': -1
@@ -195,14 +256,18 @@ class Ensemble:
             
             self.final_ensemble = self.voters[self.type_][self.ensemble_](**ensemble_param)
 
-            if optimize:
+            if self.optimize_ and (self.ensemble_ == 'voting'):
+                # 'weights': weights
+                weights = self.make_weights(n_learners=len(self.learner_), N=N)
                 grid_params = {'weights': weights}
                 grid_Search = GridSearchCV(param_grid=grid_params, estimator=self.final_ensemble, scoring=self.metric_dict[self.type_][self.metric_])
                 grid_Search.fit(X_train, y_train)
                 self.final_ensemble = grid_Search.best_estimator_
+            
+            getattr(self.final_ensemble, 'fit')(X_train, y_train)
 
     def predict(self, X_test: pd.DataFrame) -> np.ndarray:
-        return self.final_ensemble.predict(X_test)
+        return getattr(self.final_ensemble, 'predict')(X_test)
 
     def score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
         if self.metric_ in ['rmse', 'rmsle']:
@@ -210,19 +275,25 @@ class Ensemble:
         else:
             return self.metric_dict[self.type_][self.metric_](y_true, y_pred)
 
-    def K_fold(self, model, X, y, cv) -> list:
+    def K_fold(self, model: callable,
+               learner: str,
+               X: pd.DataFrame,
+               y: Union[pd.Series, np.ndarray],
+               cv: int) -> list:
         scores = []
-        folds = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+        folds = StratifiedKFold(n_splits=cv, shuffle=True, random_state=self.random_state)
 
         try:
             for train_idx, val_idx in folds.split(X, y):
                 continue
         except:
-            folds = KFold(n_splits=cv, shuffle=True, random_state=42)
+            folds = KFold(n_splits=cv, shuffle=True, random_state=self.random_state)
         
         if cv == 1:
-            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-            model.fit(X_train, y_train)
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=self.random_state)
+            self.model_fit(model, learner,
+                           X_train, y_train,
+                           X_val, y_val)
             score = self.score(y_val, model.predict(X_val))
             scores.append(score)
 
@@ -234,13 +305,17 @@ class Ensemble:
                 X_val = X.iloc[val_idx, :]
                 y_val = y.iloc[val_idx]
                 
-                model.fit(X_train, y_train)
+                self.model_fit(model, learner,
+                           X_train, y_train,
+                           X_val, y_val)
                 score = self.score(y_val, model.predict(X_val))
                 scores.append(score)
 
         return scores
 
-    def objective(self, trial: Trial, X, y, learner: str, cv: int) -> float:
+    def objective(self, trial: Trial,
+                  X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
+                  learner: str, cv: int) -> float:
         temp = copy.deepcopy(self.param[learner])
         
         if learner == 'rf': # RandomForest
@@ -289,16 +364,18 @@ class Ensemble:
         model = self.learners[self.type_][learner](**param)
         
         # K-fold cross validation
-        scores = self.K_fold(model, X, y, cv)
+        scores = self.K_fold(model, learner, X, y, cv)
 
         return np.mean(scores)
     
-    def optimizer(self, X: pd.DataFrame, y: np.ndarray,
-                  learner: str, n_trials: int, cv: int) -> dict:
+    def optimizer(self, X: pd.DataFrame,
+                  y: Union[pd.Series, np.ndarray], learner: str,
+                  n_trials: int, cv: int) -> dict:
         
         direction = self.metric_direction_dict[self.type_][self.metric_]
         study = optuna.create_study(direction=direction, sampler=TPESampler())
-        study.optimize(lambda trial : self.objective(trial, X, y, learner, cv), n_trials=n_trials)
+        study.optimize(lambda trial : self.objective(trial, X, y, learner, cv),
+                       n_trials=n_trials)
         print('Best trial: score {},\nparams: {}'.format(study.best_trial.value, study.best_trial.params))
         return study.best_trial.params
 
@@ -307,20 +384,33 @@ class BinaryCalssifier(Ensemble):
     """
     metric : F1 score
     """
-    def __init__(self, metric: str='f1_score', learner: str='auto', ensemble: str='voting'):
-        super().__init__(metric, learner, ensemble)
-        # 'classification' Type
-        self.type_ = 'classification'
-        self.param['lgbm'] = {'objective': 'binary',
-                              'learning_rate': 0.05,
-                              'random_state': 42}   # LightGBM
+    def __init__(self, metric: str='f1_score',
+                 objecitve: str='classification',
+                 learner: Union[str, list[str]]='auto',
+                 ensemble: Optional[str]='voting',
+                 learning_rate: Optional[float]=0.005,
+                 random_state: Optional[int]=42,
+                 **kwargs: any):
+
+        super().__init__(metric, objecitve,
+                         learner, ensemble,
+                         learning_rate, random_state, 
+                         **kwargs)
 
 class Regressor(Ensemble):
     # Child Class
     """
     metric : R-squared score
     """
-    def __init__(self, metric: str='r2_score', learner: str='auto', ensemble: str='voting'):
-        super().__init__(metric, learner, ensemble)
-        # 'regression' Type
-        self.type_ = 'regression'
+    def __init__(self, metric: str='r2_score',
+                 objecitve: str='regression',
+                 learner: Union[str, list[str]]='auto',
+                 ensemble: Optional[str]='voting',
+                 learning_rate: Optional[float]=0.005,
+                 random_state: Optional[int]=42,
+                 **kwargs: any):
+
+        super().__init__(metric, objecitve,
+                         learner, ensemble,
+                         learning_rate, random_state, 
+                         **kwargs)
