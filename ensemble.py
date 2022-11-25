@@ -58,6 +58,9 @@ class Ensemble:
                  random_state: Optional[int]=42,
                  early_stopping_rounds: Optional[int]=10,
                  optimize: bool=False,
+                 n_trials: int=20,
+                 cv: int=5,
+                 N: int=5,
                  **kwargs: any):
         """
         metric : sklearn.metrics 내장함수 활용
@@ -79,6 +82,9 @@ class Ensemble:
         self.random_state = random_state
         self.early_stopping_rounds = early_stopping_rounds
         self.optimize_ = optimize
+        self.n_trials_ = n_trials
+        self.cv_ = cv
+        self.N_ = N
 
         if kwargs:
             for key, value in kwargs.items:
@@ -183,7 +189,7 @@ class Ensemble:
         }
 
     def make_weights(self, n_learners: int, N: int) -> list:
-        # x+y+z = 5인 음이 아닌 정수 (x, y, z) 순서쌍 만들기
+        # x+y+z = N인 음이 아닌 정수 (x, y, z) 순서쌍 만들기
         weights = []
 
         if n_learners == 3:
@@ -212,19 +218,18 @@ class Ensemble:
             else:
                 getattr(model, 'fit')(X_train,
                                       y_train,
-                                      eval_set=[(X_train, y_train), (X_val, y_val)],
-                                      early_stopping_rounds=self.early_stopping_rounds)
+                                      eval_set=[(X_val, y_val)],
+                                      early_stopping_rounds=self.early_stopping_rounds,
+                                      verbose=True)
 
-    def fit(self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray],
-            n_trials: Optional[int]=20, cv: Optional[int]=5,
-            N: Optional[int]=5) -> None:
+    def fit(self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray]) -> None:
 
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=self.random_state)
 
         for learner in self.learner_:
             if self.optimize_:
                 # RF, XGB, LGBM 순서대로 hyper-parameter tuning
-                param = self.optimizer(X_train, y_train, learner, n_trials, cv)
+                param = self.optimizer(X_train, y_train, learner, self.n_trials_, self.cv_)
                 # Hyper-parameter fix + tuning
                 self.param[learner].update(param)
             
@@ -251,13 +256,14 @@ class Ensemble:
                     ensemble_param.update({'voting': 'soft'})
 
             elif self.ensemble_ == 'stacking':
-                ensemble_param.update({'cv': cv})
+                ensemble_param.update({'cv': self.cv_,
+                                       'final_estimator': self.learners[self.type_]['lgbm']()})
             
             self.final_ensemble = self.voters[self.type_][self.ensemble_](**ensemble_param)
 
             if self.optimize_ and (self.ensemble_ == 'voting'):
                 # 'weights': weights
-                weights = self.make_weights(n_learners=len(self.learner_), N=N)
+                weights = self.make_weights(n_learners=len(self.learner_), N=self.N_)
                 grid_params = {'weights': weights}
                 grid_Search = GridSearchCV(param_grid=grid_params, estimator=self.final_ensemble, scoring=self.metric_dict[self.type_][self.metric_])
                 grid_Search.fit(X_train, y_train)
@@ -389,12 +395,19 @@ class BinaryCalssifier(Ensemble):
                  ensemble: Optional[str]='voting',
                  learning_rate: Optional[float]=0.005,
                  random_state: Optional[int]=42,
+                 early_stopping_rounds: Optional[int]=10,
+                 optimize: bool=False,
+                 n_trials: int=20,
+                 cv: int=5,
+                 N: int=5,
                  **kwargs: any):
 
         super().__init__(metric, objecitve,
                          learner, ensemble,
-                         learning_rate, random_state, 
-                         **kwargs)
+                         learning_rate, random_state,
+                         early_stopping_rounds,
+                         optimize, n_trials,
+                         cv, N, **kwargs)
 
 class Regressor(Ensemble):
     # Child Class
@@ -407,9 +420,16 @@ class Regressor(Ensemble):
                  ensemble: Optional[str]='voting',
                  learning_rate: Optional[float]=0.005,
                  random_state: Optional[int]=42,
+                 early_stopping_rounds: Optional[int]=10,
+                 optimize: bool=False,
+                 n_trials: int=20,
+                 cv: int=5,
+                 N: int=5,
                  **kwargs: any):
 
         super().__init__(metric, objecitve,
                          learner, ensemble,
-                         learning_rate, random_state, 
-                         **kwargs)
+                         learning_rate, random_state,
+                         early_stopping_rounds,
+                         optimize, n_trials,
+                         cv, N, **kwargs)
