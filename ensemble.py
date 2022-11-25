@@ -218,8 +218,9 @@ class Ensemble:
             else:
                 getattr(model, 'fit')(X_train,
                                       y_train,
-                                      eval_set=[(X_train, y_train), (X_val, y_val)],
-                                      early_stopping_rounds=self.early_stopping_rounds)
+                                      eval_set=[(X_val, y_val)],
+                                      early_stopping_rounds=self.early_stopping_rounds,
+                                      verbose=True)
 
     def fit(self, X: pd.DataFrame, y: Union[pd.Series, np.ndarray]) -> None:
 
@@ -255,7 +256,8 @@ class Ensemble:
                     ensemble_param.update({'voting': 'soft'})
 
             elif self.ensemble_ == 'stacking':
-                ensemble_param.update({'cv': self.cv_})
+                ensemble_param.update({'cv': self.cv_,
+                                       'final_estimator': self.learners[self.type_]['lgbm']()})
             
             self.final_ensemble = self.voters[self.type_][self.ensemble_](**ensemble_param)
 

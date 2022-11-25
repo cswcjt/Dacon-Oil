@@ -71,6 +71,7 @@ class Preprocessing:
 
             "over": {
                 'RandomOverSampler': RandomOverSampler,
+                'SMOTE': SMOTE,
                 'ADASYN': ADASYN,
                 'NeighbourhoodCleaningRule': NeighbourhoodCleaningRule
             },
@@ -230,8 +231,8 @@ class Preprocessing:
 
         return feature_importance_dict
 
-    def chose_drop_features(self, feature_importance_dict: dict[str, pd.Series],
-                            threshold: int=None, draw: bool=True) -> list[str]: 
+    def choose_drop_features(self, feature_importance_dict: dict[str, pd.Series],
+                            threshold: int=0, draw: bool=False) -> dict[Union[int, str], list]:
         """
         return list of all feature_importance for each group 
         """
@@ -243,18 +244,15 @@ class Preprocessing:
                 sns.barplot(x=feature_importance, y=feature_importance.index)
                 plt.show()
 
-        drop_target_list = []
+        drop_target_dict = {}
+        
         for criteria, feature_importance in feature_importance_dict.items():
             temp_df: pd.DataFrame = feature_importance.reset_index()
             temp_df.columns = ["name", "value"]
+            
+            drop_target_dict[criteria] = temp_df[temp_df.value <= threshold].name.to_list()
 
-            if threshold == None: 
-                drop_target_list.extend(temp_df[temp_df.value == 0].name.to_list())
-
-            else:
-                drop_target_list.extend(temp_df[temp_df.value <= threshold].name.to_list())
-
-        return list(set(drop_target_list))
+        return drop_target_dict
 
     def print_report(self, split_dict: dict[str, tuple]) -> str: 
         sampler = self.my_sampler(random_state=self.random_state)
